@@ -81,21 +81,37 @@ def updateDisplay():
 		# if not -max_size/2 < z+h//2 < h+max_size/2: continue
 
 		# we can add shading to the colour here
-		screen_faces.append((face_dist, points, face.col))
+		screen_faces.append((face_dist, points, face))
 
 	screen_faces.sort(reverse=True, key=lambda x: x[0])
 	global n_faces
 	n_faces = len(screen_faces)
 
-	for face in screen_faces:
-		dist, points, col = face
 
-		pygame.draw.polygon(display, col, points)
+	# NOTE: We react to mouse here.
 
+	global selected
+	selected = None
+
+	mouse_pos = pygame.mouse.get_pos()
+	for screen_face in screen_faces:
+		dist, points, face = screen_face
+
+		pygame.draw.polygon(display, face.block.type.value, points)
+
+		transparent_helper.set_at(mouse_pos, c-22)
 		pygame.draw.polygon(transparent_helper, c--1, points)
+		if transparent_helper.get_at(mouse_pos) != c-22:
+			selected = screen_face
+
 		pygame.draw.aalines(transparent_helper, c--50, True, points)
 
+	if selected is None: transparent_helper.set_at(mouse_pos, c--1)
+	else:
+		pygame.draw.polygon(transparent_helper, c--15, selected[1])
+
 	display.blit(transparent_helper, (0, 0), special_flags=BLEND_RGB_MULT)
+
 
 	# camera pos hud
 	hud_size = 100
@@ -168,12 +184,12 @@ class Block:
 	def generate_faces(self):
 		# X+- Y+- Z+-
 		return [
-			Face(np.array([self.x + .5, self.y, self.z]), Facing.EAST, self.type.value),
-			Face(np.array([self.x - .5, self.y, self.z]), Facing.WEST, self.type.value),
-			Face(np.array([self.x, self.y + .5, self.z]), Facing.NORTH, self.type.value),
-			Face(np.array([self.x, self.y - .5, self.z]), Facing.SOUTH, self.type.value),
-			Face(np.array([self.x, self.y, self.z + .5]), Facing.UP, self.type.value),
-			Face(np.array([self.x, self.y, self.z - .5]), Facing.DOWN, self.type.value),
+			Face(np.array([self.x + .5, self.y, self.z]), Facing.EAST,	self),
+			Face(np.array([self.x - .5, self.y, self.z]), Facing.WEST,	self),
+			Face(np.array([self.x, self.y + .5, self.z]), Facing.NORTH,	self),
+			Face(np.array([self.x, self.y - .5, self.z]), Facing.SOUTH,	self),
+			Face(np.array([self.x, self.y, self.z + .5]), Facing.UP,	self),
+			Face(np.array([self.x, self.y, self.z - .5]), Facing.DOWN,	self),
 		]
 
 	def get_center(self):
@@ -249,14 +265,14 @@ class Face:
 		[ .5,  .5, 0],
 	])
 
-	def __init__(self, pos: np.ndarray, facing: Facing, col: tuple[3]):
+	def __init__(self, pos: np.ndarray, facing: Facing, block: Block):
 		self.pos = pos
 		self.facing = facing
-		self.col = col
+		self.block = block
 		self.points = self.get_points()
 
 	def __repr__(self):
-		return f'Face({*self.pos,}, {self.facing}, {Blocks(self.col)})'
+		return f'Face({*self.pos,}, {self.facing}, {self.block.type})'
 
 	def get_points(self):
 		if self.facing is Facing.EAST:	return self.pos + self.East_mat
