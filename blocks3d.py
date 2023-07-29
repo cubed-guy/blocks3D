@@ -2,6 +2,26 @@ import numpy as np
 import math
 from enum import Enum, auto
 
+class perf:
+	from time import perf_counter as now
+	render = 0
+	projection = 0
+	# neighbours = 0
+
+	@classmethod
+	def attr_str(cls):
+		return '; '.join(
+			f'{attr} = {getattr(cls, attr)*1e3:.0f}ms' for attr in dir(cls)
+			if isinstance(getattr(cls, attr), float)
+		)
+
+	@classmethod
+	def sum(cls):
+		return sum(
+			getattr(cls, attr) for attr in dir(cls)
+			if isinstance(getattr(cls, attr), float)
+		)
+
 import pygame
 from pygame.locals import *
 pygame.font.init()
@@ -24,7 +44,7 @@ fps = 60
 w, h = res = (1280, 720)
 
 PERSP_CONST = 500
-DIST_CONST = .02
+DIST_CONST = 1
 PAN_FAC = .1
 
 
@@ -34,11 +54,12 @@ def updateStat(msg = None, update = True):
 
 	# tsurf = sfont.render(f'{curr_camera.get_pos_array()} {origin_centered = }: {msg!r}',
 	msg = (
-		f'{n_faces} faces rendered; {origin_centered = }; {msg!r} '
+		f'{n_faces} of {len(faces)} faces rendered; {origin_centered = }; {msg!r} '
 		f'pos [{curr_camera.x:.02f} {curr_camera.y:.02f} {curr_camera.z:.02f}] '
 		f'facing {curr_camera.pitch:.02f} {curr_camera.yaw:.02f} '
+		f'perf {perf.attr_str()} sum = {perf.sum()*1e3:.0f}ms '
+		f'({tick}ms to render)'
 	)
-	if tick > 1e3: msg = f'{msg} ({tick/1e3} seconds to render)'
 	tsurf = sfont.render(msg, True, c--1)
 	display.blit(tsurf, (5, h-25))
 
@@ -53,28 +74,25 @@ def resize(size):
 def updateDisplay():
 	display.fill(bg)
 
-	transparent_helper = pygame.Surface(res)
-	transparent_helper.fill(c--1)
-
 	global screen_faces
 	screen_faces = []
 	# max_size = 10
 
 	# print(faces)
+	perf.projection = perf.now()
 	for face in faces:
 		if persp:
 			x, face_dist, z = curr_camera.get_screen_coords(face.pos)
-			points = [curr_camera.get_screen_coords(point) for point in face.points]
+			points = curr_camera.get_screen_coords(point) for point in face.points
 		else:
 			x, face_dist, z = (
 				  curr_camera.ortho_mat
 				@ (face.pos-curr_camera.get_pos_array())
 			)
-			points = [
-				(  curr_camera.ortho_mat
-				@ (point-curr_camera.get_pos_array())) * 200
-				for point in face.points
-			]
+			points = (
+				curr_camera.ortho_mat
+				@ (face.point-curr_camera.get_pos_array())
+			) * 200
 
 
 		# we might have to do some face chopping for faces that come close
@@ -94,6 +112,7 @@ def updateDisplay():
 	n_faces = len(screen_faces)
 
 	screen_faces.sort(reverse=True, key=lambda x: x[0])
+	perf.projection = perf.now() - perf.projection
 
 	# NOTE: We react to mouse here, in the updateDisplay() function.
 	# Coming to think about it it kind of makes sense.
@@ -103,7 +122,12 @@ def updateDisplay():
 
 	mouse_pos = pygame.mouse.get_pos()
 
-	if screen_faces: print('-|' * len(screen_faces))
+	# if screen_faces: print(len(screen_faces))
+
+	transparent_helper = pygame.Surface(res)
+	transparent_helper.fill(c--1)
+
+	perf.render = perf.now()
 	for i, screen_face in enumerate(screen_faces):
 		dist, points, face = screen_face
 
@@ -120,19 +144,21 @@ def updateDisplay():
 			# we can use `dist` to emulate minecraft style reach
 			selected_temp = face
 
-		print(i, end = '', flush = True)
+		# print(i, end = '', flush = True)
 		pygame.draw.aalines(transparent_helper, line_colour, True, points)
-		print(end = '|', flush = True)
-	if screen_faces: print('\n')
+		# print(end = '|', flush = True)
+	# if screen_faces: print('\n')
 
 	if selected_temp is None: transparent_helper.set_at(mouse_pos, default_transparency)
+	display.blit(transparent_helper, (0, 0), special_flags=BLEND_RGB_MULT)
+
+	perf.render = perf.now() - perf.render
 
 	# NOTE: In this approach, the block gets highlighted 1 frame later
 	selected = selected_temp
 	# else:
 	# 	pygame.draw.polygon(transparent_helper, c--15, selected[1])
 
-	display.blit(transparent_helper, (0, 0), special_flags=BLEND_RGB_MULT)
 
 
 	# camera pos hud
@@ -186,6 +212,8 @@ class Blocks(Enum):
 	BLUE = c@0xff
 	GREEN = c@0x8000
 	DIRT = c@0x6f5038
+	BLACK = c@0x04091b
+	WHITE = c@0xfffcee
 
 class Facing(Enum):
 	UP = auto()
@@ -224,6 +252,7 @@ class Block:
 	def get_faces(cls, blocks):
 		out = []
 
+		# perf.neighbours = perf.now()
 		for block in blocks:
 			faces = 0b111111  # X+- Y+- Z+-
 			for neighbour in blocks:
@@ -249,6 +278,8 @@ class Block:
 				if faces & 0b000100: out.append(block.faces[3])
 				if faces & 0b000010: out.append(block.faces[4])
 				if faces & 0b000001: out.append(block.faces[5])
+
+		# perf.neighbours = perf.now() - perf.neighbours
 
 		return out
 
@@ -356,11 +387,12 @@ class Camera:
 		dist = ortho_vec[1]
 
 		with np.errstate(divide='ignore'):
+			xz_fac = 1/(dist*np.tan(self.fov))
 			persp_vec = np.array([
-				ortho_vec[0]/(dist*np.tan(self.fov)),
+				ortho_vec[0]*xz_fac,
 				# np.linalg.norm(ortho_vec)*np.sign(ortho_vec[1]),
 				ortho_vec[1],
-				ortho_vec[2]/(dist*np.tan(self.fov)),
+				ortho_vec[2]*xz_fac,
 			])
 
 		# don't consider fov yet
@@ -449,6 +481,10 @@ blocks = [
 	Block(0, 1, 0, Blocks.GREEN),
 	Block(1, 1, 0, Blocks.GREEN),
 	Block(0, 0, 1, Blocks.BLUE),
+	*[
+		Block(x, y, -1, Blocks.WHITE if (x>>1)+(y>>1) & 1 else Blocks.BLACK)
+		for x in range(-10, 11) for y in range(-10, 11)
+	]
 ]
 
 faces = Block.get_faces(blocks)
@@ -486,13 +522,15 @@ while running:
 			elif event.key == K_KP_PERIOD:
 				# face the origin
 				xy_dist = np.linalg.norm((curr_camera.x, curr_camera.y))
-				curr_camera.pitch = math.atan2(curr_camera.z, xy_dist)
+				curr_camera.pitch = -math.atan2(curr_camera.z, xy_dist)
 
 				# zero is towards +Y
-				curr_camera.yaw = math.atan2(curr_camera.x, curr_camera.y) + np.pi/2
+				curr_camera.yaw = math.atan2(curr_camera.x, curr_camera.y) + np.pi
 				curr_camera.update_ortho_mat()
 
 			elif event.key == K_c:
+				# 4.234438329921463 0.5336638211072566 -8.487734282078373
+				# 0.8028514559173922 0 -1.5620696805349243
 				print(
 					curr_camera.x,
 					curr_camera.y,
