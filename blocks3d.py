@@ -44,9 +44,9 @@ fps = 60
 w, h = res = (1280, 720)
 
 PERSP_CONST = 500
-DIST_CONST = 1
+DIST_CONST = .2
 PAN_FAC = .1
-
+CAMERA_INIT = -5.502009953701664, -0.5724415907191001, 1.2383811608198905, 0.0558717447724245, 0, -4.629416160380034
 
 def updateStat(msg = None, update = True):
 	rect = (0, h-25, w, 26)
@@ -112,6 +112,7 @@ def updateDisplay():
 		perp = np.array([-first_edge[1], first_edge[0]])
 		perp_dot = np.dot(perp, proj_points[2, ::2] - proj_points[1, ::2])
 		if perp_dot >= 0: continue
+		dists = proj_points[..., 1]
 		proj_points = proj_points[..., ::2]
 		if (abs(proj_points) > center).all(): continue
 		points = points[..., ::2]
@@ -123,7 +124,8 @@ def updateDisplay():
 		# if not -max_size/2 < z+h//2 < h+max_size/2: continue
 
 		# we can add shading to the colour here
-		screen_faces.append((closest[1], points, face))
+		screen_faces.append((dists.sum(), points, face))
+		# screen_faces.append((closest[1], points, face))
 
 	global n_faces
 	n_faces = len(screen_faces)
@@ -549,9 +551,9 @@ selected = None
 
 # 307-380ms using _multi()
 # 317-390ms without _multi()
-curr_camera = Camera(4.234, 0.533, -8.487, .001)
-curr_camera.pitch = 0.802
-curr_camera.yaw = -1.562
+curr_camera = Camera(*CAMERA_INIT[:3], .001)
+curr_camera.pitch = CAMERA_INIT[3]
+curr_camera.yaw = CAMERA_INIT[5]
 curr_camera.update_ortho_mat()
 proj_camera = curr_camera
 # 4.234438329921463 0.5336638211072566 -8.487734282078373
@@ -597,6 +599,7 @@ while running:
 					curr_camera.pitch,
 					curr_camera.roll,
 					curr_camera.yaw,
+					sep = ', '
 				)
 
 			elif event.key == K_f:  # freeze set of faces rendered
