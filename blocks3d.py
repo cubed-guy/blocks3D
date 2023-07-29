@@ -84,32 +84,40 @@ def updateDisplay():
 	global face_points
 	if persp:
 		screen_points = curr_camera.get_screen_coords_multi(face_points)
-		# proj_screen_points = proj_camera.get_screen_coords_multi(face_points)
+		proj_screen_points = proj_camera.get_screen_coords_multi(face_points)
 	else:
 		screen_points = (
 			curr_camera.ortho_mat
 			@ (face_points-curr_camera.get_pos_array())
+		) * 200
+		proj_screen_points = (
+			proj_camera.ortho_mat
+			@ (face_points-proj_camera.get_pos_array())
 		) * 200
 
 	global selected
 
 	center = [w//2, h//2]
 
-	for face, points in zip(faces, screen_points):
+	for face, points, proj_points in zip(faces, screen_points, proj_screen_points):
 
 		# we might have to do some face chopping for faces that come close
+		closest = min(proj_points, key=lambda x: x[1])
+		if closest[1] < DIST_CONST: continue  # let them just disappear
 		closest = min(points, key=lambda x: x[1])
 		if closest[1] < DIST_CONST: continue  # let them just disappear
-		# print('Cross between', points[1] - points[0], points[2] - points[1])
-		# print('points =', points)
-		first_edge = points[1, ::2] - points[0, ::2]
+		# print('Cross between', proj_points[1] - proj_points[0], proj_points[2] - proj_points[1])
+		# print('proj_points =', proj_points)
+		first_edge = proj_points[1, ::2] - proj_points[0, ::2]
 		perp = np.array([-first_edge[1], first_edge[0]])
-		perp_dot = np.dot(perp, points[2, ::2] - points[1, ::2])
+		perp_dot = np.dot(perp, proj_points[2, ::2] - proj_points[1, ::2])
 		if perp_dot >= 0: continue
+		proj_points = proj_points[..., ::2]
+		if (abs(proj_points) > center).all(): continue
 		points = points[..., ::2]
 		if (abs(points) > center).all(): continue
 		points += center
-		# points = [point[::2] + (w//2, h//2) for point in points]
+		# proj_points = [point[::2] + (w//2, h//2) for point in proj_points]
 
 		# if not -max_size/2 < x+w//2 < w+max_size/2: continue
 		# if not -max_size/2 < z+h//2 < h+max_size/2: continue
@@ -364,7 +372,12 @@ class Camera:
 		self.ortho_mat = np.eye(3)
 
 	def copy(self):
-		...
+		out_camera = self.__class__(self.x, self.y, self.z, self.fov)
+		out_camera.pitch = self.pitch
+		out_camera.roll = self.roll
+		out_camera.yaw = self.yaw
+		out_camera.update_ortho_mat()
+		return out_camera
 
 	def get_pos_array(self):
 		return np.array([self.x, self.y, self.z], dtype=np.float64)
@@ -540,6 +553,7 @@ curr_camera = Camera(4.234, 0.533, -8.487, .001)
 curr_camera.pitch = 0.802
 curr_camera.yaw = -1.562
 curr_camera.update_ortho_mat()
+proj_camera = curr_camera
 # 4.234438329921463 0.5336638211072566 -8.487734282078373
 # 0.8028514559173922 0 -1.5620696805349243
 persp = True
@@ -585,8 +599,10 @@ while running:
 					curr_camera.yaw,
 				)
 
-			elif event.key == K_f:  # fix camera to show rendered faces
+			elif event.key == K_f:  # freeze set of faces rendered
 				proj_camera = curr_camera.copy()
+			elif event.key == K_p:  # unfreeze set of faces rendered
+				proj_camera = curr_camera
 
 		elif event.type == VIDEORESIZE:
 			if not display.get_flags()&FULLSCREEN: resize(event.size)
