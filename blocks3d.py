@@ -58,7 +58,7 @@ def updateStat(msg = None, update = True):
 		f'pos [{curr_camera.x:.02f} {curr_camera.y:.02f} {curr_camera.z:.02f}] '
 		f'facing {curr_camera.pitch:.02f} {curr_camera.yaw:.02f} '
 		f'perf {perf.attr_str()} sum = {perf.sum()*1e3:.0f}ms '
-		f'({tick}ms to render)'
+		f'({1e3/tick:.01f}fps)'
 	)
 	tsurf = sfont.render(msg, True, c--1)
 	display.blit(tsurf, (5, h-25))
@@ -80,33 +80,34 @@ def updateDisplay():
 
 	# print(faces)
 	perf.projection = perf.now()
-	for face in faces:
-		if persp:
-			x, face_dist, z = curr_camera.get_screen_coords(face.pos)
-			points = curr_camera.get_screen_coords(point) for point in face.points
-		else:
-			x, face_dist, z = (
-				  curr_camera.ortho_mat
-				@ (face.pos-curr_camera.get_pos_array())
-			)
-			points = (
-				curr_camera.ortho_mat
-				@ (face.point-curr_camera.get_pos_array())
-			) * 200
 
+	global face_points
+	if persp:
+		screen_points = curr_camera.get_screen_coords_multi(face_points)
+	else:
+		screen_points = (
+			curr_camera.ortho_mat
+			@ (face_points-curr_camera.get_pos_array())
+		) * 200
+
+	for face, points in zip(faces, screen_points):
 
 		# we might have to do some face chopping for faces that come close
 		closest = min(points, key=lambda x: x[1])
 		if closest[1] < DIST_CONST: continue  # let them just disappear
-		face_norm = np.cross(points[1] - points[0], points[2] - points[1])
-		if face_norm[1] < 0: continue
+		# print('Cross between', points[1] - points[0], points[2] - points[1])
+		# print('points =', points)
+		first_edge = points[1, ::2] - points[0, ::2]
+		perp = np.array([-first_edge[1], first_edge[0]])
+		perp_dot = np.dot(perp, points[2, ::2] - points[1, ::2])
+		if perp_dot >= 0: continue
 		points = [point[::2] + (w//2, h//2) for point in points]
 
 		# if not -max_size/2 < x+w//2 < w+max_size/2: continue
 		# if not -max_size/2 < z+h//2 < h+max_size/2: continue
 
 		# we can add shading to the colour here
-		screen_faces.append((face_dist, points, face))
+		screen_faces.append((closest[1], points, face))
 
 	global n_faces
 	n_faces = len(screen_faces)
@@ -128,7 +129,7 @@ def updateDisplay():
 	transparent_helper.fill(c--1)
 
 	perf.render = perf.now()
-	for i, screen_face in enumerate(screen_faces):
+	for screen_face in screen_faces:
 		dist, points, face = screen_face
 
 		pygame.draw.polygon(display, face.block.type.value, points)
@@ -226,6 +227,7 @@ class Facing(Enum):
 	# Y = auto()
 	# Z = auto()
 
+face_points = []
 class Block:
 	def __init__(self, x, y, z, type):
 		self.x = x
@@ -251,6 +253,8 @@ class Block:
 	@classmethod
 	def get_faces(cls, blocks):
 		out = []
+		global face_points
+		face_points = []
 
 		# perf.neighbours = perf.now()
 		for block in blocks:
@@ -281,6 +285,7 @@ class Block:
 
 		# perf.neighbours = perf.now() - perf.neighbours
 
+		face_points.extend(face.points for face in out)
 		return out
 
 class Face:
@@ -398,6 +403,27 @@ class Camera:
 		# don't consider fov yet
 		return persp_vec
 
+	def get_screen_coords_multi(self, coord_arrs):
+		point_vecs = coord_arrs-self.get_pos_array()
+
+		ortho_vecs = point_vecs @ self.ortho_mat.transpose()
+		# ortho_vecs = self.ortho_mat @ point_vec
+
+		# # Fish eye style
+		# dist = np.linalg.norm(ortho_vec)*np.sign(ortho_vec[1])
+
+		# No distortion
+		dists = ortho_vecs[..., 1]
+
+		with np.errstate(divide='ignore'):
+			xz_facs = 1/(dists*np.tan(self.fov))
+		persp_vecs = ortho_vecs
+		# print(f'{persp_vecs.shape = } {xz_facs.shape = }')
+		persp_vecs[..., ::2] *= xz_facs[..., None]
+
+		# don't consider fov yet
+		return persp_vecs
+
 # about origin
 def rotate_camera_pos(pitch, yaw, camera):
 	point_vec = camera.get_pos_array()
@@ -492,11 +518,20 @@ faces = Block.get_faces(blocks)
 print(len(blocks))
 pos = [0, 0]
 dragging = False
-tick = 0
+tick = 1
 n_faces = None
 selected = None
 
-curr_camera = Camera(0, -5, 0, .001)
+# curr_camera = Camera(0, -5, 0, .001)
+
+# 307-380ms using _multi()
+# 317-390ms without _multi()
+curr_camera = Camera(4.234, 0.533, -8.487, .001)
+curr_camera.pitch = 0.802
+curr_camera.yaw = -1.562
+curr_camera.update_ortho_mat()
+# 4.234438329921463 0.5336638211072566 -8.487734282078373
+# 0.8028514559173922 0 -1.5620696805349243
 persp = True
 origin_centered = True
 next_block = Blocks.DIRT
