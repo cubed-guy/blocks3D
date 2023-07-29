@@ -13,13 +13,20 @@ bg = c-34
 fg = c@0xff9088
 green = c@0xa0ffe0
 
+mouse_detector = c-22
+block_hover = c--15
+face_hover = c--40
+default_transparency = c--1
+line_colour = c--96
+
 fps = 60
 
 w, h = res = (1280, 720)
 
 PERSP_CONST = 500
-DIST_CONST = .002
+DIST_CONST = .02
 PAN_FAC = .1
+
 
 def updateStat(msg = None, update = True):
 	rect = (0, h-25, w, 26)
@@ -83,46 +90,64 @@ def updateDisplay():
 		# we can add shading to the colour here
 		screen_faces.append((face_dist, points, face))
 
-	screen_faces.sort(reverse=True, key=lambda x: x[0])
 	global n_faces
 	n_faces = len(screen_faces)
 
+	screen_faces.sort(reverse=True, key=lambda x: x[0])
 
-	# NOTE: We react to mouse here.
+	# NOTE: We react to mouse here, in the updateDisplay() function.
+	# Coming to think about it it kind of makes sense.
 
 	global selected
-	selected = None
+	selected_temp = None
 
 	mouse_pos = pygame.mouse.get_pos()
-	for screen_face in screen_faces:
+
+	if screen_faces: print('-|' * len(screen_faces))
+	for i, screen_face in enumerate(screen_faces):
 		dist, points, face = screen_face
 
 		pygame.draw.polygon(display, face.block.type.value, points)
 
-		transparent_helper.set_at(mouse_pos, c-22)
-		pygame.draw.polygon(transparent_helper, c--1, points)
-		if transparent_helper.get_at(mouse_pos) != c-22:
-			selected = screen_face
+		transparent_helper.set_at(mouse_pos, mouse_detector)
+		if face is selected:
+			pygame.draw.polygon(transparent_helper, face_hover, points)
+		elif selected and face.block is selected.block:
+			pygame.draw.polygon(transparent_helper, block_hover, points)
+		else:
+			pygame.draw.polygon(transparent_helper, default_transparency, points)
+		if transparent_helper.get_at(mouse_pos) != mouse_detector:
+			# we can use `dist` to emulate minecraft style reach
+			selected_temp = face
 
-		pygame.draw.aalines(transparent_helper, c--50, True, points)
+		print(i, end = '', flush = True)
+		pygame.draw.aalines(transparent_helper, line_colour, True, points)
+		print(end = '|', flush = True)
+	if screen_faces: print('\n')
 
-	if selected is None: transparent_helper.set_at(mouse_pos, c--1)
-	else:
-		pygame.draw.polygon(transparent_helper, c--15, selected[1])
+	if selected_temp is None: transparent_helper.set_at(mouse_pos, default_transparency)
+
+	# NOTE: In this approach, the block gets highlighted 1 frame later
+	selected = selected_temp
+	# else:
+	# 	pygame.draw.polygon(transparent_helper, c--15, selected[1])
 
 	display.blit(transparent_helper, (0, 0), special_flags=BLEND_RGB_MULT)
 
 
 	# camera pos hud
 	hud_size = 100
+	hud_fov = 5
+	hud_fov2 = hud_fov ** 2
+
 	display.fill(c--27, (0, 0, hud_size, hud_size*2))
 	display.fill(c--27, (0, 0, hud_size, hud_size*2))
 
 	x, y, z = curr_camera.get_pos_array()
 
-	view_x, view_y = x + 25*np.sin(curr_camera.yaw), y + 25*np.cos(curr_camera.yaw)
-	display.fill(c-90, (x//5+hud_size//2, -y//5+hud_size//2, 4, 4))
-	display.fill(c-int(curr_camera.yaw*255//180%1), (view_x//5+hud_size//2, -view_y//5+hud_size//2, 2, 2))
+	view_x, view_y = x + hud_fov2*np.sin(curr_camera.yaw), y + hud_fov2*np.cos(curr_camera.yaw)
+	display.fill(c-90, (x//hud_fov+hud_size//2, -y//hud_fov+hud_size//2, 4, 4))
+	display.fill(c-int(curr_camera.yaw*255//180%1), (view_x//hud_fov+hud_size//2, -view_y//hud_fov+hud_size//2, 2, 2))
 	display.fill(c-0, (hud_size//2, hud_size//2, 4, 4))
 	display.fill(c@0xff0000, (hud_size//2+5, hud_size//2, 4, 4))
 	display.fill(c@0x00ff00, (hud_size//2, hud_size//2-5, 4, 4))
@@ -422,6 +447,7 @@ blocks = [
 	Block(0, 0, 0, Blocks.DIRT),
 	Block(1, 0, 0, Blocks.STONE),
 	Block(0, 1, 0, Blocks.GREEN),
+	Block(1, 1, 0, Blocks.GREEN),
 	Block(0, 0, 1, Blocks.BLUE),
 ]
 
@@ -432,10 +458,12 @@ pos = [0, 0]
 dragging = False
 tick = 0
 n_faces = None
+selected = None
 
 curr_camera = Camera(0, -5, 0, .001)
 persp = True
 origin_centered = True
+next_block = Blocks.DIRT
 
 resize(res)
 pres = pygame.display.list_modes()[0]
@@ -458,11 +486,10 @@ while running:
 			elif event.key == K_KP_PERIOD:
 				# face the origin
 				xy_dist = np.linalg.norm((curr_camera.x, curr_camera.y))
-				curr_camera.pitch = -math.atan(curr_camera.z / xy_dist)
+				curr_camera.pitch = math.atan2(curr_camera.z, xy_dist)
 
 				# zero is towards +Y
-				curr_camera.yaw = math.atan(curr_camera.x / curr_camera.y)
-				# if curr_camera.y > 0: curr_camera.yaw += np.pi/2
+				curr_camera.yaw = math.atan2(curr_camera.x, curr_camera.y) + np.pi/2
 				curr_camera.update_ortho_mat()
 
 			elif event.key == K_c:
