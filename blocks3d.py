@@ -4,9 +4,9 @@ from enum import Enum, auto
 
 class perf:
 	from time import perf_counter as now
+	neighbours = 0
 	render = 0
 	projection = 0
-	# neighbours = 0
 
 	@classmethod
 	def attr_str(cls):
@@ -74,7 +74,7 @@ def resize(size):
 def updateDisplay():
 	display.fill(bg)
 
-	global screen_faces
+	# global screen_faces
 	screen_faces = []
 	# max_size = 10
 
@@ -101,7 +101,9 @@ def updateDisplay():
 		perp = np.array([-first_edge[1], first_edge[0]])
 		perp_dot = np.dot(perp, points[2, ::2] - points[1, ::2])
 		if perp_dot >= 0: continue
-		points = [point[::2] + (w//2, h//2) for point in points]
+		points = points[..., ::2] + [w//2, h//2]
+		# points = [point[::2] + (w//2, h//2) for point in points]
+		if (abs(points) > [w, h]).all(): continue
 
 		# if not -max_size/2 < x+w//2 < w+max_size/2: continue
 		# if not -max_size/2 < z+h//2 < h+max_size/2: continue
@@ -164,15 +166,15 @@ def updateDisplay():
 
 	# camera pos hud
 	hud_size = 100
-	hud_fov = 5
-	hud_fov2 = hud_fov ** 2
+	hud_fov = 1
+	view_len = 5
 
 	display.fill(c--27, (0, 0, hud_size, hud_size*2))
 	display.fill(c--27, (0, 0, hud_size, hud_size*2))
 
 	x, y, z = curr_camera.get_pos_array()
 
-	view_x, view_y = x + hud_fov2*np.sin(curr_camera.yaw), y + hud_fov2*np.cos(curr_camera.yaw)
+	view_x, view_y = x + view_len*np.sin(curr_camera.yaw), y + view_len*np.cos(curr_camera.yaw)
 	display.fill(c-90, (x//hud_fov+hud_size//2, -y//hud_fov+hud_size//2, 4, 4))
 	display.fill(c-int(curr_camera.yaw*255//180%1), (view_x//hud_fov+hud_size//2, -view_y//hud_fov+hud_size//2, 2, 2))
 	display.fill(c-0, (hud_size//2, hud_size//2, 4, 4))
@@ -181,10 +183,10 @@ def updateDisplay():
 
 	dist = np.linalg.norm((x, y))
 	view_x, view_y = (
-		-dist + 25*np.cos(curr_camera.pitch), z + 25*np.sin(curr_camera.pitch)
+		-dist + view_len*np.cos(curr_camera.pitch), z + view_len*np.sin(curr_camera.pitch)
 	)
-	display.fill(c-90, (-dist//5 + hud_size//2, z//5 + 3*hud_size//2, 4, 4))  # camera
-	display.fill(c-int(curr_camera.yaw*255//180%1), (view_x//5 + hud_size//2, view_y//5 + 3*hud_size//2, 2, 2))
+	display.fill(c-90, (-dist//hud_fov + hud_size//2, z//hud_fov + 3*hud_size//2, 4, 4))  # camera
+	display.fill(c-int(curr_camera.yaw*255//180%1), (view_x//hud_fov + hud_size//2, view_y//hud_fov + 3*hud_size//2, 2, 2))
 	display.fill(c-0, (hud_size//2, 3*hud_size//2, 4, 4))
 	display.fill(c@0xff0000, (hud_size//2+5*np.sin(curr_camera.yaw), 3*hud_size//2, 4, 4))
 	display.fill(c@0x00ff00, (hud_size//2+5*np.cos(curr_camera.yaw), 3*hud_size//2, 4, 4))
@@ -515,7 +517,7 @@ blocks = [
 
 faces = Block.get_faces(blocks)
 
-print(len(blocks))
+print(len(blocks), 'blocks')
 pos = [0, 0]
 dragging = False
 tick = 1
